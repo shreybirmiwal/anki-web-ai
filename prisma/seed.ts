@@ -35,12 +35,15 @@ async function main() {
       type: NoteType.BASIC,
       front: "What is the powerhouse of the cell?",
       back: "Mitochondria.",
-      cards: {
-        create: {
-          front: "What is the powerhouse of the cell?",
-          back: "Mitochondria.",
-        },
-      },
+    },
+  });
+
+  await prisma.card.create({
+    data: {
+      deckId: deck.id,
+      noteId: note.id,
+      front: "What is the powerhouse of the cell?",
+      back: "Mitochondria.",
     },
   });
 
