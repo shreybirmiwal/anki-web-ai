@@ -143,6 +143,17 @@ button {
   color: var(--muted);
 }
 
+.multiline {
+  white-space: pre-wrap;
+}
+
+.card-image {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
 .spacer {
   height: 0.5rem;
 }

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -23,6 +24,13 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
     where: { id: deckId, userId, isArchived: false },
     include: {
       cards: {
+        include: {
+          note: {
+            select: {
+              extra: true,
+            },
+          },
+        },
         orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }],
       },
     },
@@ -132,11 +140,24 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
         {deck.cards.map((card) => (
           <article className="card stack" key={card.id}>
             <p>
-              <strong>Front:</strong> {card.front}
+              <strong>Front:</strong> <span className="multiline">{card.front}</span>
             </p>
             <p>
-              <strong>Back:</strong> {card.back}
+              <strong>Back:</strong> <span className="multiline">{card.back}</span>
             </p>
+            {card.note.extra &&
+            typeof card.note.extra === "object" &&
+            "imageUrl" in card.note.extra &&
+            typeof card.note.extra.imageUrl === "string" ? (
+              <Image
+                alt="Card illustration"
+                className="card-image"
+                height={1024}
+                src={card.note.extra.imageUrl}
+                unoptimized
+                width={1024}
+              />
+            ) : null}
             <p className="muted">
               {card.state} · Due {card.dueAt.toLocaleString()}
             </p>

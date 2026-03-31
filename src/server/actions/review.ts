@@ -16,9 +16,31 @@ const reviewEditSchema = z.object({
   back: z.string().trim().min(1).max(2000),
 });
 
+function readImageUrl(extra: unknown) {
+  if (!extra || typeof extra !== "object") {
+    return undefined;
+  }
+
+  const maybeImageUrl = (extra as { imageUrl?: unknown }).imageUrl;
+  return typeof maybeImageUrl === "string" && maybeImageUrl.length > 0 ? maybeImageUrl : undefined;
+}
+
 export async function getNextReviewCard(deckId: string) {
   const userId = await getRequiredUserId();
-  return getNextDueCard(db, userId, deckId);
+  const card = await getNextDueCard(db, userId, deckId);
+  if (!card) {
+    return null;
+  }
+
+  const note = await db.note.findUnique({
+    where: { id: card.noteId },
+    select: { extra: true },
+  });
+
+  return {
+    ...card,
+    imageUrl: readImageUrl(note?.extra),
+  };
 }
 
 export async function getDeckReviewStats(deckId: string) {

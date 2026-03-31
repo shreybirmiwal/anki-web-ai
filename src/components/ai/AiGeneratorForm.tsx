@@ -46,6 +46,10 @@ export function AiGeneratorForm({ decks }: AiGeneratorFormProps) {
             type="text"
           />
         </label>
+        <label className="row" style={{ alignItems: "center" }}>
+          <input defaultChecked={state.includeImages ?? false} name="includeImages" type="checkbox" />
+          Include AI-generated study illustrations when useful
+        </label>
         {state.error ? <p className="muted">{state.error}</p> : null}
         <button className="button" disabled={isGenerating} type="submit">
           {isGenerating ? "Generating..." : "Generate Cards"}
@@ -74,6 +78,7 @@ export function AiGeneratorForm({ decks }: AiGeneratorFormProps) {
             value={editedCards || prettyCards}
           />
         </label>
+        <input type="hidden" name="includeImages" value={state.includeImages ? "true" : "false"} />
         <input type="hidden" name="cards" value={cardsPayload} />
         <button className="button secondary" type="submit">
           Save Generated Cards

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 
 type ReviewCardProps = {
@@ -7,6 +8,7 @@ type ReviewCardProps = {
   cardId: string;
   front: string;
   back: string;
+  imageUrl?: string;
   submitAction: (formData: FormData) => Promise<void>;
   updateCardAction: (formData: FormData) => Promise<void>;
   enhanceWithAiAction: (formData: FormData) => Promise<void>;
@@ -17,6 +19,7 @@ export function ReviewCard({
   cardId,
   front,
   back,
+  imageUrl,
   submitAction,
   updateCardAction,
   enhanceWithAiAction,
@@ -27,12 +30,22 @@ export function ReviewCard({
   return (
     <article className="card stack">
       <h2>Question</h2>
-      <p>{front}</p>
+      <p className="multiline">{front}</p>
+      {imageUrl ? (
+        <Image
+          alt="Study illustration"
+          className="card-image"
+          height={1024}
+          src={imageUrl}
+          unoptimized
+          width={1024}
+        />
+      ) : null}
       {revealed ? (
         <>
           <div className="spacer" />
           <h3>Answer</h3>
-          <p>{back}</p>
+          <p className="multiline">{back}</p>
           <div className="row">
             <button className="button secondary" onClick={() => setEditing((state) => !state)} type="button">
               {editing ? "Close Edit" : "Edit"}

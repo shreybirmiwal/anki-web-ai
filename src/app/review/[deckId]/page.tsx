@@ -50,6 +50,7 @@ export default async function ReviewDeckPage({ params }: ReviewDeckPageProps) {
           deckId={deckId}
           enhanceWithAiAction={enhanceReviewCardWithAi}
           front={card.front}
+          imageUrl={card.imageUrl}
           submitAction={submitReview}
           updateCardAction={updateReviewCard}
         />
