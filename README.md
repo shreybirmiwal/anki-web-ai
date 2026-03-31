@@ -12,7 +12,7 @@ npm install
 
 2. Start Postgres (local):
 
-```bash
+```bash  
 docker compose up -d
 ```
 
