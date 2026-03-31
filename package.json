@@ -24,6 +24,8 @@
     "next": "16.2.1",
     "next-auth": "^4.24.13",
     "openai": "^6.33.0",
+    "pdf-parse": "^2.4.5",
+    "pdf-parser": "^1.0.5",
     "prisma": "^6.19.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",

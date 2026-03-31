@@ -1,4 +1,4 @@
-import { generatedCardsSchema } from "@/lib/ai/schema";
+import { generatedCardsSchema, generatedQuizSchema } from "@/lib/ai/schema";
 
 function extractJsonArray(raw: string) {
   const trimmed = raw.trim();
@@ -24,4 +24,10 @@ export function parseGeneratedCards(raw: string) {
   const json = extractJsonArray(raw);
   const parsed = JSON.parse(json);
   return generatedCardsSchema.parse(parsed);
+}
+
+export function parseGeneratedQuiz(raw: string) {
+  const json = extractJsonArray(raw);
+  const parsed = JSON.parse(json);
+  return generatedQuizSchema.parse(parsed);
 }

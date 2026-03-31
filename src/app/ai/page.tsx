@@ -6,7 +6,14 @@ export default async function AiPage() {
   const userId = await getRequiredUserId();
   const decks = await db.deck.findMany({
     where: { userId, isArchived: false },
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      sourceNotes: {
+        select: { id: true, title: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
     orderBy: { name: "asc" },
   });
 

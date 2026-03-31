@@ -1,13 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeckQuizGenerator } from "@/components/ai/DeckQuizGenerator";
 import { db } from "@/lib/db";
 import { getRequiredUserId } from "@/lib/require-user";
 import {
   createBasicCard,
   createBasicReversedCard,
+  createSourceNote,
+  deleteSourceNote,
   createClozeCards,
   disableDeckSharing,
+  updateSourceNote,
+  uploadSourceNote,
   deleteCard,
   enableDeckSharing,
   updateCard,
@@ -23,6 +28,9 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
   const deck = await db.deck.findFirst({
     where: { id: deckId, userId, isArchived: false },
     include: {
+      sourceNotes: {
+        orderBy: { createdAt: "asc" },
+      },
       cards: {
         include: {
           note: {
@@ -88,6 +96,75 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
       </section>
 
       <section className="card stack">
+        <h2>Lecture Notes ({deck.sourceNotes.length})</h2>
+        <p className="muted">
+          Add notes directly or upload text, markdown, or PDF files (for example Lecture 1, Lecture 2).
+        </p>
+        <form action={createSourceNote} className="stack">
+          <input type="hidden" name="deckId" value={deck.id} />
+          <label className="field">
+            Note Title
+            <input name="title" placeholder="Lecture 1" required type="text" />
+          </label>
+          <label className="field">
+            Note Content
+            <textarea name="content" placeholder="Paste lecture notes..." required rows={8} />
+          </label>
+          <button className="button secondary" type="submit">
+            Save Note
+          </button>
+        </form>
+
+        <form action={uploadSourceNote} className="stack" encType="multipart/form-data">
+          <input type="hidden" name="deckId" value={deck.id} />
+          <label className="field">
+            Upload Title (optional)
+            <input name="title" placeholder="Defaults to file name" type="text" />
+          </label>
+          <label className="field">
+            Upload File
+            <input accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf" name="file" required type="file" />
+          </label>
+          <button className="button secondary" type="submit">
+            Upload Note File
+          </button>
+        </form>
+
+        {deck.sourceNotes.length === 0 ? (
+          <p className="muted">No lecture notes yet.</p>
+        ) : (
+          <div className="stack">
+            {deck.sourceNotes.map((sourceNote) => (
+              <article className="card stack" key={sourceNote.id}>
+                <form action={updateSourceNote} className="stack">
+                  <input type="hidden" name="deckId" value={deck.id} />
+                  <input type="hidden" name="sourceNoteId" value={sourceNote.id} />
+                  <label className="field">
+                    Title
+                    <input defaultValue={sourceNote.title} name="title" required type="text" />
+                  </label>
+                  <label className="field">
+                    Content
+                    <textarea defaultValue={sourceNote.content} name="content" required rows={8} />
+                  </label>
+                  <button className="button secondary" type="submit">
+                    Save Note Edits
+                  </button>
+                </form>
+                <form action={deleteSourceNote}>
+                  <input type="hidden" name="deckId" value={deck.id} />
+                  <input type="hidden" name="sourceNoteId" value={sourceNote.id} />
+                  <button className="button danger" type="submit">
+                    Delete Note
+                  </button>
+                </form>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card stack">
         <h2>Add Basic Card</h2>
         <form action={createBasicCard} className="stack">
           <input type="hidden" name="deckId" value={deck.id} />
@@ -133,6 +210,16 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
             Add Cloze Cards
           </button>
         </form>
+      </section>
+
+      <section className="stack">
+        <DeckQuizGenerator
+          deckId={deck.id}
+          sourceNotes={deck.sourceNotes.map((sourceNote) => ({
+            id: sourceNote.id,
+            title: sourceNote.title,
+          }))}
+        />
       </section>
 
       <section className="stack">

@@ -6,7 +6,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getRequiredUserId } from "@/lib/require-user";
-import { basicCardSchema, clozeSchema, deckNameSchema } from "@/lib/validation/card";
+import {
+  basicCardSchema,
+  clozeSchema,
+  createSourceNoteSchema,
+  deckNameSchema,
+  sourceNoteContentSchema,
+  sourceNoteTitleSchema,
+} from "@/lib/validation/card";
 
 function extractClozeDeletions(text: string) {
   const regex = /\{\{c\d+::(.*?)(?:::(.*?))?\}\}/g;
@@ -27,6 +34,50 @@ async function generateDeckShareId() {
     }
   }
   throw new Error("Could not generate a unique share link. Please try again.");
+}
+
+async function requireDeckOwnership(userId: string, deckId: string) {
+  const deck = await db.deck.findFirst({
+    where: { id: deckId, userId, isArchived: false },
+    select: { id: true },
+  });
+  if (!deck) {
+    throw new Error("Deck not found.");
+  }
+}
+
+function normalizeSourceNoteContent(content: string) {
+  return content.replace(/\r\n/g, "\n").trim();
+}
+
+async function parseSourceFile(file: File) {
+  if (file.size > 2_000_000) {
+    throw new Error("File is too large. Keep uploads under 2MB.");
+  }
+
+  const lowerName = file.name.toLowerCase();
+  const isTextLike =
+    file.type === "text/plain" ||
+    file.type === "text/markdown" ||
+    lowerName.endsWith(".txt") ||
+    lowerName.endsWith(".md");
+  const isPdf = file.type === "application/pdf" || lowerName.endsWith(".pdf");
+
+  if (!isTextLike && !isPdf) {
+    throw new Error("Unsupported file type. Upload .txt, .md, or .pdf files.");
+  }
+
+  const rawBuffer = await file.arrayBuffer();
+
+  if (isPdf) {
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: Buffer.from(rawBuffer) });
+    const parsed = await parser.getText();
+    await parser.destroy();
+    return normalizeSourceNoteContent(parsed.text ?? "");
+  }
+
+  return normalizeSourceNoteContent(new TextDecoder("utf-8").decode(rawBuffer));
 }
 
 export async function createDeck(formData: FormData) {
@@ -125,6 +176,109 @@ export async function deleteDeck(formData: FormData) {
     where: { id: deckId, userId },
   });
   revalidatePath("/decks");
+}
+
+export async function createSourceNote(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  await requireDeckOwnership(userId, deckId);
+
+  const parsed = createSourceNoteSchema.safeParse({
+    title: formData.get("title"),
+    content: formData.get("content"),
+  });
+  if (!parsed.success) {
+    throw new Error("Invalid note input.");
+  }
+
+  await db.deckSourceNote.create({
+    data: {
+      deckId,
+      title: parsed.data.title,
+      content: normalizeSourceNoteContent(parsed.data.content),
+    },
+  });
+
+  revalidatePath(`/decks/${deckId}`);
+}
+
+export async function uploadSourceNote(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  await requireDeckOwnership(userId, deckId);
+
+  const fileEntry = formData.get("file");
+  if (!(fileEntry instanceof File) || fileEntry.size === 0) {
+    throw new Error("Choose a file to upload.");
+  }
+
+  const parsedTitle = sourceNoteTitleSchema.safeParse({
+    title: String(formData.get("title") || "").trim() || fileEntry.name.replace(/\.[^.]+$/, ""),
+  });
+  if (!parsedTitle.success) {
+    throw new Error("Invalid note title.");
+  }
+
+  const content = await parseSourceFile(fileEntry);
+  const parsedContent = sourceNoteContentSchema.safeParse({ content });
+  if (!parsedContent.success) {
+    throw new Error("Uploaded note is empty or too long.");
+  }
+
+  await db.deckSourceNote.create({
+    data: {
+      deckId,
+      title: parsedTitle.data.title,
+      content: parsedContent.data.content,
+      fileName: fileEntry.name,
+      mimeType: fileEntry.type || null,
+    },
+  });
+
+  revalidatePath(`/decks/${deckId}`);
+}
+
+export async function updateSourceNote(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  const sourceNoteId = String(formData.get("sourceNoteId") || "");
+  await requireDeckOwnership(userId, deckId);
+
+  const parsed = createSourceNoteSchema.safeParse({
+    title: formData.get("title"),
+    content: formData.get("content"),
+  });
+  if (!parsed.success) {
+    throw new Error("Invalid note input.");
+  }
+
+  await db.deckSourceNote.updateMany({
+    where: {
+      id: sourceNoteId,
+      deckId,
+      deck: { userId },
+    },
+    data: {
+      title: parsed.data.title,
+      content: normalizeSourceNoteContent(parsed.data.content),
+    },
+  });
+
+  revalidatePath(`/decks/${deckId}`);
+}
+
+export async function deleteSourceNote(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  const sourceNoteId = String(formData.get("sourceNoteId") || "");
+  await db.deckSourceNote.deleteMany({
+    where: {
+      id: sourceNoteId,
+      deckId,
+      deck: { userId },
+    },
+  });
+  revalidatePath(`/decks/${deckId}`);
 }
 
 export async function createBasicCard(formData: FormData) {
@@ -306,6 +460,9 @@ export async function copySharedDeck(formData: FormData) {
       isArchived: false,
     },
     include: {
+      sourceNotes: {
+        orderBy: { createdAt: "asc" },
+      },
       notes: {
         orderBy: { createdAt: "asc" },
       },
@@ -329,6 +486,18 @@ export async function copySharedDeck(formData: FormData) {
     });
 
     const noteIdMap = new Map<string, string>();
+    if (sourceDeck.sourceNotes.length > 0) {
+      await tx.deckSourceNote.createMany({
+        data: sourceDeck.sourceNotes.map((sourceNote) => ({
+          deckId: copiedDeck.id,
+          title: sourceNote.title,
+          content: sourceNote.content,
+          fileName: sourceNote.fileName,
+          mimeType: sourceNote.mimeType,
+        })),
+      });
+    }
+
     for (const note of sourceDeck.notes) {
       const createdNote = await tx.note.create({
         data: {

@@ -4,6 +4,7 @@ import { ReviewCard } from "@/components/review/ReviewCard";
 import { db } from "@/lib/db";
 import { getRequiredUserId } from "@/lib/require-user";
 import {
+  askDeckNotesAction,
   enhanceReviewCardWithAi,
   getDeckReviewStats,
   getNextReviewCard,
@@ -48,6 +49,7 @@ export default async function ReviewDeckPage({ params }: ReviewDeckPageProps) {
           back={card.back}
           cardId={card.id}
           deckId={deckId}
+          askDeckNotesAction={askDeckNotesAction}
           enhanceWithAiAction={enhanceReviewCardWithAi}
           front={card.front}
           imageUrl={card.imageUrl}

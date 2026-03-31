@@ -85,6 +85,7 @@ model Deck {
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   notes Note[]
   cards Card[]
+  sourceNotes DeckSourceNote[]
 
   @@index([userId, isArchived])
 }
@@ -104,6 +105,21 @@ model Note {
   cards Card[]
 
   @@index([deckId, type])
+}
+
+model DeckSourceNote {
+  id        String   @id @default(cuid())
+  deckId    String
+  title     String
+  content   String
+  fileName  String?
+  mimeType  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@index([deckId, createdAt])
 }
 
 model Card {

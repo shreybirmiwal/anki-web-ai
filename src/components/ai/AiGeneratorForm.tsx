@@ -10,6 +10,10 @@ import {
 type DeckOption = {
   id: string;
   name: string;
+  sourceNotes: Array<{
+    id: string;
+    title: string;
+  }>;
 };
 
 type AiGeneratorFormProps = {
@@ -20,9 +24,27 @@ const INITIAL_STATE: GeneratedState = {};
 
 export function AiGeneratorForm({ decks }: AiGeneratorFormProps) {
   const [state, generateAction, isGenerating] = useActionState(generateCardsAction, INITIAL_STATE);
+  const initialDeckId = state.deckId ?? "";
+  const initialSelectedIds =
+    state.selectedSourceNoteIds && state.selectedSourceNoteIds.length > 0
+      ? state.selectedSourceNoteIds
+      : decks.find((deck) => deck.id === initialDeckId)?.sourceNotes.map((note) => note.id) ?? [];
   const [editedCards, setEditedCards] = useState("");
+  const [selectedDeckId, setSelectedDeckId] = useState(initialDeckId);
+  const [includeDeckNotes, setIncludeDeckNotes] = useState(state.includeDeckNotes ?? true);
+  const [selectedSourceNoteIds, setSelectedSourceNoteIds] = useState<string[]>(initialSelectedIds);
   const prettyCards = useMemo(() => JSON.stringify(state.cards ?? [], null, 2), [state.cards]);
   const cardsPayload = editedCards.trim() || prettyCards;
+  const selectedDeck = useMemo(
+    () => decks.find((deck) => deck.id === selectedDeckId),
+    [decks, selectedDeckId],
+  );
+
+  function toggleSourceNote(noteId: string) {
+    setSelectedSourceNoteIds((prev) =>
+      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId],
+    );
+  }
 
   return (
     <div className="grid two">
@@ -46,11 +68,76 @@ export function AiGeneratorForm({ decks }: AiGeneratorFormProps) {
             type="text"
           />
         </label>
-        <label className="row" style={{ alignItems: "center" }}>
-          <input defaultChecked={state.includeImages ?? false} name="includeImages" type="checkbox" />
-          Include AI-generated study illustrations when useful
+        <label className="field">
+          Deck (optional)
+          <select
+            name="deckId"
+            onChange={(event) => {
+              const nextDeckId = event.target.value;
+              setSelectedDeckId(nextDeckId);
+              const nextDeck = decks.find((deck) => deck.id === nextDeckId);
+              setSelectedSourceNoteIds(nextDeck?.sourceNotes.map((note) => note.id) ?? []);
+            }}
+            value={selectedDeckId}
+          >
+            <option value="">No deck notes</option>
+            {decks.map((deck) => (
+              <option key={deck.id} value={deck.id}>
+                {deck.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedDeck ? (
+          <div className="stack">
+            <label className="row" style={{ alignItems: "center" }}>
+              <input
+                checked={includeDeckNotes}
+                name="includeDeckNotes"
+                onChange={(event) => setIncludeDeckNotes(event.target.checked)}
+                type="checkbox"
+              />
+              Include lecture notes from selected deck
+            </label>
+            {includeDeckNotes ? (
+              <>
+                <p className="muted">Select lecture notes to include in generation:</p>
+                {selectedDeck.sourceNotes.length === 0 ? (
+                  <p className="muted">No lecture notes found for this deck yet.</p>
+                ) : (
+                  <div className="stack">
+                    {selectedDeck.sourceNotes.map((note) => (
+                      <label className="row" key={note.id} style={{ alignItems: "center" }}>
+                        <input
+                          checked={selectedSourceNoteIds.includes(note.id)}
+                          name="selectedSourceNoteIds"
+                          onChange={() => toggleSourceNote(note.id)}
+                          type="checkbox"
+                          value={note.id}
+                        />
+                        {note.title}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        <label className="field">
+          Image source
+          <select defaultValue={state.imageSource ?? "auto"} name="imageSource">
+            <option value="real">Real images (Wikimedia Commons)</option>
+            <option value="ai">AI generated</option>
+            <option value="auto">Auto (real first, then AI fallback)</option>
+          </select>
         </label>
         {state.error ? <p className="muted">{state.error}</p> : null}
+        {state.selectedSourceNoteTitles && state.selectedSourceNoteTitles.length > 0 ? (
+          <p className="muted">
+            Included notes: {state.selectedSourceNoteTitles.join(", ")}
+          </p>
+        ) : null}
         <button className="button" disabled={isGenerating} type="submit">
           {isGenerating ? "Generating..." : "Generate Cards"}
         </button>
@@ -78,7 +165,7 @@ export function AiGeneratorForm({ decks }: AiGeneratorFormProps) {
             value={editedCards || prettyCards}
           />
         </label>
-        <input type="hidden" name="includeImages" value={state.includeImages ? "true" : "false"} />
+        <input type="hidden" name="imageSource" value={state.imageSource ?? "auto"} />
         <input type="hidden" name="cards" value={cardsPayload} />
         <button className="button secondary" type="submit">
           Save Generated Cards

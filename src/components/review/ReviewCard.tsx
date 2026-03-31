@@ -1,7 +1,9 @@
 "use client";
 
+import { useActionState } from "react";
 import Image from "next/image";
 import { useState } from "react";
+import type { AskDeckNotesState } from "@/server/actions/review";
 
 type ReviewCardProps = {
   deckId: string;
@@ -12,6 +14,7 @@ type ReviewCardProps = {
   submitAction: (formData: FormData) => Promise<void>;
   updateCardAction: (formData: FormData) => Promise<void>;
   enhanceWithAiAction: (formData: FormData) => Promise<void>;
+  askDeckNotesAction: (_prevState: AskDeckNotesState, formData: FormData) => Promise<AskDeckNotesState>;
 };
 
 export function ReviewCard({
@@ -23,9 +26,11 @@ export function ReviewCard({
   submitAction,
   updateCardAction,
   enhanceWithAiAction,
+  askDeckNotesAction,
 }: ReviewCardProps) {
   const [revealed, setRevealed] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [askState, askAction, isAsking] = useActionState(askDeckNotesAction, {});
 
   return (
     <article className="card stack">
@@ -86,6 +91,33 @@ export function ReviewCard({
                 <button className="button" type="submit">
                   AI Add to Card
                 </button>
+              </form>
+
+              <form action={askAction} className="stack">
+                <input type="hidden" name="deckId" value={deckId} />
+                <input type="hidden" name="cardId" value={cardId} />
+                <label className="field">
+                  Ask AI (query lecture notes)
+                  <textarea
+                    defaultValue={askState.question}
+                    name="question"
+                    placeholder="Ask about this card using your deck notes. Example: how does this connect to Lecture 2?"
+                    required
+                    rows={3}
+                  />
+                </label>
+                <button className="button secondary" disabled={isAsking} type="submit">
+                  {isAsking ? "Asking..." : "Ask AI"}
+                </button>
+                {askState.error ? <p className="muted">{askState.error}</p> : null}
+                {askState.answer ? (
+                  <div className="stack">
+                    <p className="multiline">{askState.answer}</p>
+                    {askState.citedNoteTitles && askState.citedNoteTitles.length > 0 ? (
+                      <p className="muted">Referenced notes: {askState.citedNoteTitles.join(", ")}</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </form>
             </section>
           ) : null}

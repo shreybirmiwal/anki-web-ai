@@ -5,6 +5,9 @@ import OpenAI from "openai";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { buildAskDeckNotesPrompt } from "@/lib/ai/prompts";
+import { askDeckNotesResponseSchema } from "@/lib/ai/schema";
+import { buildDeckSourceNotesText, getDeckSourceNotesForUser } from "@/lib/ai/source-notes";
 import { db } from "@/lib/db";
 import { computeReviewMutation } from "@/lib/review/computeReviewMutation";
 import { getRequiredUserId } from "@/lib/require-user";
@@ -150,6 +153,13 @@ const aiAdditionSchema = z.object({
   addition: z.string().trim().min(1).max(1200),
 });
 
+export type AskDeckNotesState = {
+  error?: string;
+  answer?: string;
+  citedNoteTitles?: string[];
+  question?: string;
+};
+
 export async function enhanceReviewCardWithAi(formData: FormData) {
   const userId = await getRequiredUserId();
   assertWithinRateLimit(`review-ai:${userId}`, 8, 60_000);
@@ -212,4 +222,77 @@ export async function enhanceReviewCardWithAi(formData: FormData) {
 
   revalidatePath(`/review/${deckId}`);
   redirect(`/review/${deckId}`);
+}
+
+export async function askDeckNotesAction(
+  _prevState: AskDeckNotesState,
+  formData: FormData,
+): Promise<AskDeckNotesState> {
+  try {
+    const userId = await getRequiredUserId();
+    assertWithinRateLimit(`ask-notes-ai:${userId}`, 10, 60_000);
+
+    const cardId = String(formData.get("cardId") || "");
+    const deckId = String(formData.get("deckId") || "");
+    const question = String(formData.get("question") || "").trim();
+    if (!question) {
+      return { error: "Enter a question first." };
+    }
+
+    const card = await db.card.findFirst({
+      where: {
+        id: cardId,
+        deckId,
+        deck: { userId },
+      },
+      select: {
+        id: true,
+        front: true,
+        back: true,
+      },
+    });
+    if (!card) {
+      return { error: "Card not found." };
+    }
+
+    const sourceNotes = await getDeckSourceNotesForUser({
+      userId,
+      deckId,
+    });
+    if (sourceNotes.length === 0) {
+      return { error: "No lecture notes found for this deck yet." };
+    }
+
+    const notesContext = buildDeckSourceNotesText(sourceNotes, { perNoteChars: 2_000, maxChars: 12_000 });
+
+    if (!process.env.OPENAI_API_KEY) {
+      return {
+        question,
+        answer: "OpenAI API key is not configured. Add notes context and API key to use Ask AI.",
+        citedNoteTitles: sourceNotes.slice(0, 2).map((note) => note.title),
+      };
+    }
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: buildAskDeckNotesPrompt({
+        question,
+        cardFront: card.front,
+        cardBack: card.back,
+        notesContext,
+      }),
+      max_output_tokens: 700,
+    });
+
+    const parsed = askDeckNotesResponseSchema.parse(JSON.parse(extractJsonObject(response.output_text)));
+    return {
+      question,
+      answer: parsed.answer,
+      citedNoteTitles: parsed.citedNoteTitles,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to query notes.";
+    return { error: message };
+  }
 }
