@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeReviewMutation } from "@/server/actions/review";
+import { computeReviewMutation } from "@/lib/review/computeReviewMutation";
 
 describe("computeReviewMutation", () => {
   it("creates consistent card and review log mutation payloads", () => {

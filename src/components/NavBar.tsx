@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 
 export async function NavBar() {
   const session = await getServerSession(authOptions);
@@ -14,7 +15,14 @@ export async function NavBar() {
         <nav className="nav-links">
           <Link href="/decks">Decks</Link>
           <Link href="/ai">AI Generate</Link>
-          {!session ? <Link href="/login">Login</Link> : <span>{session.user.email}</span>}
+          {!session ? (
+            <Link href="/login">Login</Link>
+          ) : (
+            <>
+              <span>{session.user.email}</span>
+              <SignOutButton />
+            </>
+          )}
         </nav>
       </div>
     </header>
