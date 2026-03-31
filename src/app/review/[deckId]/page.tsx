@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 import { ReviewCard } from "@/components/review/ReviewCard";
 import { db } from "@/lib/db";
 import { getRequiredUserId } from "@/lib/require-user";
-import { getDeckReviewStats, getNextReviewCard, submitReview } from "@/server/actions/review";
+import {
+  enhanceReviewCardWithAi,
+  getDeckReviewStats,
+  getNextReviewCard,
+  submitReview,
+  updateReviewCard,
+} from "@/server/actions/review";
 
 type ReviewDeckPageProps = {
   params: Promise<{ deckId: string }>;
@@ -42,8 +48,10 @@ export default async function ReviewDeckPage({ params }: ReviewDeckPageProps) {
           back={card.back}
           cardId={card.id}
           deckId={deckId}
+          enhanceWithAiAction={enhanceReviewCardWithAi}
           front={card.front}
           submitAction={submitReview}
+          updateCardAction={updateReviewCard}
         />
       )}
     </div>

@@ -1,37 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Anki
 
-## Getting Started
+AI Anki is a Next.js + Prisma flashcard app with spaced repetition and optional AI-assisted card improvements.
 
-First, run the development server:
+## Local development
+
+1. Install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Start Postgres (local):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+docker compose up -d
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Configure environment variables in `.env` (see `.env.example`):
+- `DATABASE_URL`
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+- `OPENAI_API_KEY` (optional, but enables AI features)
 
-## Learn More
+4. Run migrations and start dev server:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run prisma:migrate
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy to Vercel (with managed Postgres)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Create a managed Postgres database (Neon, Supabase, Vercel Postgres, etc.).
+2. In Vercel project settings, configure env vars:
+- `DATABASE_URL` (production connection string)
+- `NEXTAUTH_URL` (your production URL, e.g. `https://your-app.vercel.app`)
+- `NEXTAUTH_SECRET` (long random secret)
+- `OPENAI_API_KEY` (optional but recommended)
+3. Set Vercel Build Command to:
 
-## Deploy on Vercel
+```bash
+npm run build:vercel
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+This runs Prisma client generation, applies migrations with `prisma migrate deploy`, then builds Next.js.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# anki-web-ai
+## Useful scripts
+
+- `npm run build` - Generate Prisma client and build Next.js.
+- `npm run build:vercel` - Generate Prisma client, apply deploy migrations, and build.
+- `npm run prisma:migrate:deploy` - Apply existing migrations to a deployed database.

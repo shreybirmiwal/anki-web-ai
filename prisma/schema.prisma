@@ -77,6 +77,8 @@ model Deck {
   userId     String
   name       String
   isArchived Boolean  @default(false)
+  isShareEnabled Boolean @default(false)
+  shareId    String?  @unique
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

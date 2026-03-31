@@ -1,7 +1,9 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { NoteType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getRequiredUserId } from "@/lib/require-user";
 import { basicCardSchema, clozeSchema, deckNameSchema } from "@/lib/validation/card";
@@ -14,6 +16,17 @@ function extractClozeDeletions(text: string) {
     hiddenText: match[1] || "",
     hint: match[2] || "",
   }));
+}
+
+async function generateDeckShareId() {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const shareId = randomBytes(16).toString("hex");
+    const existingDeck = await db.deck.findUnique({ where: { shareId } });
+    if (!existingDeck) {
+      return shareId;
+    }
+  }
+  throw new Error("Could not generate a unique share link. Please try again.");
 }
 
 export async function createDeck(formData: FormData) {
@@ -31,6 +44,52 @@ export async function createDeck(formData: FormData) {
   });
 
   revalidatePath("/decks");
+}
+
+export async function enableDeckSharing(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  const existingDeck = await db.deck.findFirst({
+    where: { id: deckId, userId, isArchived: false },
+    select: { id: true, shareId: true },
+  });
+  if (!existingDeck) {
+    throw new Error("Deck not found.");
+  }
+
+  const shareId = existingDeck.shareId ?? (await generateDeckShareId());
+  await db.deck.update({
+    where: { id: existingDeck.id },
+    data: {
+      isShareEnabled: true,
+      shareId,
+    },
+  });
+
+  revalidatePath(`/decks/${deckId}`);
+  revalidatePath(`/shared/${shareId}`);
+}
+
+export async function disableDeckSharing(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  const deck = await db.deck.findFirst({
+    where: { id: deckId, userId },
+    select: { shareId: true },
+  });
+  if (!deck) {
+    throw new Error("Deck not found.");
+  }
+
+  await db.deck.update({
+    where: { id: deckId },
+    data: { isShareEnabled: false },
+  });
+
+  revalidatePath(`/decks/${deckId}`);
+  if (deck.shareId) {
+    revalidatePath(`/shared/${deck.shareId}`);
+  }
 }
 
 export async function renameDeck(formData: FormData) {
@@ -231,4 +290,90 @@ export async function deleteCard(formData: FormData) {
     },
   });
   revalidatePath(`/decks/${deckId}`);
+}
+
+export async function copySharedDeck(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const shareId = String(formData.get("shareId") || "");
+  if (!shareId) {
+    throw new Error("Missing share link.");
+  }
+
+  const sourceDeck = await db.deck.findFirst({
+    where: {
+      shareId,
+      isShareEnabled: true,
+      isArchived: false,
+    },
+    include: {
+      notes: {
+        orderBy: { createdAt: "asc" },
+      },
+      cards: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+  if (!sourceDeck) {
+    throw new Error("Shared deck not found.");
+  }
+
+  const now = new Date();
+  const copiedDeckId = await db.$transaction(async (tx) => {
+    const copiedDeck = await tx.deck.create({
+      data: {
+        userId,
+        name: `${sourceDeck.name} (Copy)`,
+      },
+      select: { id: true },
+    });
+
+    const noteIdMap = new Map<string, string>();
+    for (const note of sourceDeck.notes) {
+      const createdNote = await tx.note.create({
+        data: {
+          deckId: copiedDeck.id,
+          type: note.type,
+          front: note.front,
+          back: note.back,
+          text: note.text,
+          ...(note.extra === null ? {} : { extra: note.extra }),
+        },
+        select: { id: true },
+      });
+      noteIdMap.set(note.id, createdNote.id);
+    }
+
+    if (sourceDeck.cards.length > 0) {
+      await tx.card.createMany({
+        data: sourceDeck.cards.map((card) => {
+          const copiedNoteId = noteIdMap.get(card.noteId);
+          if (!copiedNoteId) {
+            throw new Error("Could not copy cards due to missing note mapping.");
+          }
+
+          return {
+            deckId: copiedDeck.id,
+            noteId: copiedNoteId,
+            ordinal: card.ordinal,
+            front: card.front,
+            back: card.back,
+            state: "NEW",
+            dueAt: now,
+            intervalDays: 0,
+            easeFactor: 2.5,
+            reps: 0,
+            lapses: 0,
+            stepIndex: 0,
+            lastReviewedAt: null,
+          };
+        }),
+      });
+    }
+
+    return copiedDeck.id;
+  });
+
+  revalidatePath("/decks");
+  redirect(`/decks/${copiedDeckId}`);
 }

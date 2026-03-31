@@ -6,7 +6,9 @@ import {
   createBasicCard,
   createBasicReversedCard,
   createClozeCards,
+  disableDeckSharing,
   deleteCard,
+  enableDeckSharing,
   updateCard,
 } from "@/server/actions/decks";
 
@@ -30,6 +32,13 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
     notFound();
   }
 
+  const sharePath = deck.shareId ? `/shared/${deck.shareId}` : "";
+  const shareUrl = deck.shareId
+    ? process.env.NEXTAUTH_URL
+      ? `${process.env.NEXTAUTH_URL}${sharePath}`
+      : sharePath
+    : "";
+
   return (
     <div className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -38,6 +47,37 @@ export default async function DeckDetailPage({ params }: DeckDetailPageProps) {
           Start Review
         </Link>
       </div>
+
+      <section className="card stack">
+        <h2>Share Deck</h2>
+        <p className="muted">Anyone logged in with this link can copy this deck.</p>
+        {deck.isShareEnabled ? (
+          <>
+            <label className="field">
+              Share link
+              <input readOnly value={shareUrl} />
+            </label>
+            <div className="row">
+              <Link className="button secondary" href={sharePath}>
+                Open Shared View
+              </Link>
+              <form action={disableDeckSharing}>
+                <input type="hidden" name="deckId" value={deck.id} />
+                <button className="button danger" type="submit">
+                  Disable Sharing
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <form action={enableDeckSharing}>
+            <input type="hidden" name="deckId" value={deck.id} />
+            <button className="button" type="submit">
+              Enable Sharing
+            </button>
+          </form>
+        )}
+      </section>
 
       <section className="card stack">
         <h2>Add Basic Card</h2>
