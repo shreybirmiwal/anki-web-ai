@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum NoteType {
+  BASIC
+  BASIC_REVERSED
+  CLOZE
+}
+
+enum CardState {
+  NEW
+  LEARNING
+  REVIEW
+  RELEARNING
+  SUSPENDED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String?  @unique
+  emailVerified DateTime?
+  image        String?
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+  decks    Deck[]
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Deck {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes Note[]
+  cards Card[]
+
+  @@index([userId, isArchived])
+}
+
+model Note {
+  id         String   @id @default(cuid())
+  deckId     String
+  type       NoteType
+  front      String?
+  back       String?
+  text       String?
+  extra      Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  deck  Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  cards Card[]
+
+  @@index([deckId, type])
+}
+
+model Card {
+  id            String    @id @default(cuid())
+  deckId        String
+  noteId        String
+  ordinal       Int       @default(0)
+  front         String
+  back          String
+  state         CardState @default(NEW)
+  dueAt         DateTime  @default(now())
+  intervalDays  Int       @default(0)
+  easeFactor    Float     @default(2.5)
+  reps          Int       @default(0)
+  lapses        Int       @default(0)
+  stepIndex     Int       @default(0)
+  lastReviewedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  deck       Deck        @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  note       Note        @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  reviewLogs ReviewLog[]
+
+  @@index([deckId, dueAt, state])
+  @@index([noteId, ordinal])
+}
+
+model ReviewLog {
+  id                String   @id @default(cuid())
+  cardId            String
+  rating            Int
+  previousState     CardState
+  nextState         CardState
+  previousInterval  Int
+  nextInterval      Int
+  previousEase      Float
+  nextEase          Float
+  reviewedAt        DateTime @default(now())
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, reviewedAt])
+}
