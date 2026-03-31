@@ -14,16 +14,10 @@ export default async function LoginPage() {
     <div className="grid two">
       <LoginForm />
       <section className="card stack">
-        <h2>Demo credentials</h2>
-        <p className="muted">Run the seed command, then log in with:</p>
-        <p>
-          <strong>Email:</strong> demo@aianki.dev
-        </p>
-        <p>
-          <strong>Password:</strong> demo12345
-        </p>
+        <h2>New here?</h2>
+        <p className="muted">Create an account to start building decks and reviewing cards.</p>
         <Link href="/register" className="button secondary">
-          Need an account?
+          Create an account
         </Link>
       </section>
     </div>
