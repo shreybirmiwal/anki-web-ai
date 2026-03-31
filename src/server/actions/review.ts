@@ -19,6 +19,10 @@ const reviewEditSchema = z.object({
   back: z.string().trim().min(1).max(2000),
 });
 
+const reviewAheadSchema = z.object({
+  count: z.coerce.number().int().min(0).max(500),
+});
+
 function readImageUrl(extra: unknown) {
   if (!extra || typeof extra !== "object") {
     return undefined;
@@ -28,9 +32,92 @@ function readImageUrl(extra: unknown) {
   return typeof maybeImageUrl === "string" && maybeImageUrl.length > 0 ? maybeImageUrl : undefined;
 }
 
+function addDays(base: Date, days: number) {
+  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+async function getPersistedActiveCard(
+  userId: string,
+  deckId: string,
+  now: Date,
+  allowFuture: boolean,
+) {
+  const progress = await db.deckReviewProgress.findUnique({
+    where: {
+      userId_deckId: {
+        userId,
+        deckId,
+      },
+    },
+    select: {
+      activeCardId: true,
+    },
+  });
+  if (!progress?.activeCardId) {
+    return null;
+  }
+
+  return db.card.findFirst({
+    where: {
+      id: progress.activeCardId,
+      deckId,
+      ...(allowFuture ? {} : { dueAt: { lte: now } }),
+      state: { not: "SUSPENDED" },
+      deck: { userId, isArchived: false },
+    },
+  });
+}
+
+async function setActiveCardForDeck(userId: string, deckId: string, activeCardId: string | null) {
+  await db.deckReviewProgress.upsert({
+    where: {
+      userId_deckId: {
+        userId,
+        deckId,
+      },
+    },
+    create: {
+      userId,
+      deckId,
+      activeCardId,
+    },
+    update: {
+      activeCardId,
+    },
+  });
+}
+
+async function getNextCardIncludingFuture(userId: string, deckId: string) {
+  return db.card.findFirst({
+    where: {
+      deckId,
+      state: { not: "SUSPENDED" },
+      deck: { userId, isArchived: false },
+    },
+    orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }],
+  });
+}
+
 export async function getNextReviewCard(deckId: string) {
   const userId = await getRequiredUserId();
-  const card = await getNextDueCard(db, userId, deckId);
+  const now = new Date();
+  const progress = await db.deckReviewProgress.findUnique({
+    where: {
+      userId_deckId: {
+        userId,
+        deckId,
+      },
+    },
+    select: {
+      reviewAheadRemaining: true,
+    },
+  });
+  const allowFuture = (progress?.reviewAheadRemaining ?? 0) > 0;
+  let card = await getPersistedActiveCard(userId, deckId, now, allowFuture);
+  if (!card) {
+    card = allowFuture ? await getNextCardIncludingFuture(userId, deckId) : await getNextDueCard(db, userId, deckId, now);
+    await setActiveCardForDeck(userId, deckId, card?.id ?? null);
+  }
   if (!card) {
     return null;
   }
@@ -46,18 +133,77 @@ export async function getNextReviewCard(deckId: string) {
   };
 }
 
-export async function getDeckReviewStats(deckId: string) {
-  const userId = await getRequiredUserId();
-  const dueCount = await db.card.count({
-    where: {
-      deckId,
-      dueAt: { lte: new Date() },
-      state: { not: "SUSPENDED" },
-      deck: { userId, isArchived: false },
-    },
-  });
+export type DeckReviewForecast = {
+  tomorrow: number;
+  twoDays: number;
+  sevenDays: number;
+};
 
-  return { dueCount };
+export type DeckReviewStats = {
+  dueCount: number;
+  forecast: DeckReviewForecast;
+  reviewAheadRemaining: number;
+};
+
+export async function getDeckReviewStats(deckId: string): Promise<DeckReviewStats> {
+  const userId = await getRequiredUserId();
+  const now = new Date();
+  const tomorrow = addDays(now, 1);
+  const twoDays = addDays(now, 2);
+  const sevenDays = addDays(now, 7);
+  const whereBase = {
+    deckId,
+    state: { not: "SUSPENDED" as const },
+    deck: { userId, isArchived: false },
+  };
+
+  const [dueCount, tomorrowCount, twoDayCount, sevenDayCount, progress] = await Promise.all([
+    db.card.count({
+      where: {
+        ...whereBase,
+        dueAt: { lte: now },
+      },
+    }),
+    db.card.count({
+      where: {
+        ...whereBase,
+        dueAt: { gt: now, lte: tomorrow },
+      },
+    }),
+    db.card.count({
+      where: {
+        ...whereBase,
+        dueAt: { gt: tomorrow, lte: twoDays },
+      },
+    }),
+    db.card.count({
+      where: {
+        ...whereBase,
+        dueAt: { gt: twoDays, lte: sevenDays },
+      },
+    }),
+    db.deckReviewProgress.findUnique({
+      where: {
+        userId_deckId: {
+          userId,
+          deckId,
+        },
+      },
+      select: {
+        reviewAheadRemaining: true,
+      },
+    }),
+  ]);
+
+  return {
+    dueCount,
+    forecast: {
+      tomorrow: tomorrowCount,
+      twoDays: twoDayCount,
+      sevenDays: sevenDayCount,
+    },
+    reviewAheadRemaining: progress?.reviewAheadRemaining ?? 0,
+  };
 }
 
 export async function submitReview(formData: FormData) {
@@ -83,16 +229,96 @@ export async function submitReview(formData: FormData) {
 
   const now = new Date();
   const mutation = computeReviewMutation(card, rating, now);
+  const wasReviewedAhead = card.dueAt > now;
 
-  await db.$transaction([
-    db.card.update({
+  await db.$transaction(async (tx) => {
+    const progress = await tx.deckReviewProgress.findUnique({
+      where: {
+        userId_deckId: {
+          userId,
+          deckId,
+        },
+      },
+      select: {
+        reviewAheadRemaining: true,
+      },
+    });
+    const currentReviewAhead = progress?.reviewAheadRemaining ?? 0;
+    const nextReviewAhead = wasReviewedAhead ? Math.max(0, currentReviewAhead - 1) : currentReviewAhead;
+
+    await tx.card.update({
       where: { id: card.id },
       data: mutation.cardData,
-    }),
-    db.reviewLog.create({
+    });
+    await tx.reviewLog.create({
       data: mutation.logData,
-    }),
-  ]);
+    });
+    await tx.deckReviewProgress.upsert({
+      where: {
+        userId_deckId: {
+          userId,
+          deckId,
+        },
+      },
+      create: {
+        userId,
+        deckId,
+        activeCardId: null,
+        reviewAheadRemaining: nextReviewAhead,
+      },
+      update: {
+        activeCardId: null,
+        reviewAheadRemaining: nextReviewAhead,
+      },
+    });
+  });
+
+  revalidatePath(`/review/${deckId}`);
+  redirect(`/review/${deckId}`);
+}
+
+export async function setReviewAheadMode(formData: FormData) {
+  const userId = await getRequiredUserId();
+  const deckId = String(formData.get("deckId") || "");
+  const parsed = reviewAheadSchema.safeParse({
+    count: formData.get("count"),
+  });
+  if (!parsed.success) {
+    throw new Error("Invalid review-ahead count.");
+  }
+
+  const deck = await db.deck.findFirst({
+    where: {
+      id: deckId,
+      userId,
+      isArchived: false,
+    },
+    select: {
+      id: true,
+    },
+  });
+  if (!deck) {
+    throw new Error("Deck not found.");
+  }
+
+  await db.deckReviewProgress.upsert({
+    where: {
+      userId_deckId: {
+        userId,
+        deckId,
+      },
+    },
+    create: {
+      userId,
+      deckId,
+      activeCardId: null,
+      reviewAheadRemaining: parsed.data.count,
+    },
+    update: {
+      activeCardId: null,
+      reviewAheadRemaining: parsed.data.count,
+    },
+  });
 
   revalidatePath(`/review/${deckId}`);
   redirect(`/review/${deckId}`);

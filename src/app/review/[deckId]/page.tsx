@@ -8,6 +8,7 @@ import {
   enhanceReviewCardWithAi,
   getDeckReviewStats,
   getNextReviewCard,
+  setReviewAheadMode,
   submitReview,
   updateReviewCard,
 } from "@/server/actions/review";
@@ -36,6 +37,18 @@ export default async function ReviewDeckPage({ params }: ReviewDeckPageProps) {
     <div className="stack">
       <h1>Review: {deck.name}</h1>
       <p className="muted">Due cards now: {stats.dueCount}</p>
+      <form action={setReviewAheadMode} className="row">
+        <input type="hidden" name="deckId" value={deckId} />
+        <input defaultValue={stats.reviewAheadRemaining} min={0} name="count" required type="number" />
+        <button className="button secondary" type="submit">
+          Set Review Ahead
+        </button>
+        <span className="muted">Remaining: {stats.reviewAheadRemaining}</span>
+      </form>
+      <p className="muted">
+        Upcoming: tomorrow {stats.forecast.tomorrow} · in 2 days {stats.forecast.twoDays} · days 3-7{" "}
+        {stats.forecast.sevenDays}
+      </p>
       {!card ? (
         <section className="card stack">
           <h2>Done for now</h2>
